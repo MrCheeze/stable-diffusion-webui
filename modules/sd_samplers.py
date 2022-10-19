@@ -227,6 +227,7 @@ class CFGDenoiser(torch.nn.Module):
         self.nmask = None
         self.init_latent = None
         self.step = 0
+        self.c_cat = torch.zeros(1, 5, 64, 64, device=shared.device) # makes the new layers useless because I don't know how to initialize this properly
 
     def forward(self, x, sigma, uncond, cond, cond_scale):
         if state.interrupted or state.skipped:
@@ -245,22 +246,22 @@ class CFGDenoiser(torch.nn.Module):
             cond_in = torch.cat([tensor, uncond])
 
             if shared.batch_cond_uncond:
-                x_out = self.inner_model(x_in, sigma_in, cond=cond_in)
+                x_out = self.inner_model(x_in, sigma_in, cond={"c_concat": [self.c_cat], "c_crossattn": [cond_in]} )
             else:
                 x_out = torch.zeros_like(x_in)
                 for batch_offset in range(0, x_out.shape[0], batch_size):
                     a = batch_offset
                     b = a + batch_size
-                    x_out[a:b] = self.inner_model(x_in[a:b], sigma_in[a:b], cond=cond_in[a:b])
+                    x_out[a:b] = self.inner_model(x_in[a:b], sigma_in[a:b], cond={"c_concat": [self.c_cat], "c_crossattn": [cond_in[a:b]]})
         else:
             x_out = torch.zeros_like(x_in)
             batch_size = batch_size*2 if shared.batch_cond_uncond else batch_size
             for batch_offset in range(0, tensor.shape[0], batch_size):
                 a = batch_offset
                 b = min(a + batch_size, tensor.shape[0])
-                x_out[a:b] = self.inner_model(x_in[a:b], sigma_in[a:b], cond=tensor[a:b])
+                x_out[a:b] = self.inner_model(x_in[a:b], sigma_in[a:b], cond={"c_concat": [self.c_cat], "c_crossattn": [tensor[a:b]]})
 
-            x_out[-uncond.shape[0]:] = self.inner_model(x_in[-uncond.shape[0]:], sigma_in[-uncond.shape[0]:], cond=uncond)
+            x_out[-uncond.shape[0]:] = self.inner_model(x_in[-uncond.shape[0]:], sigma_in[-uncond.shape[0]:], cond={"c_concat": [self.c_cat], "c_crossattn": [uncond]})
 
         denoised_uncond = x_out[-uncond.shape[0]:]
         denoised = torch.clone(denoised_uncond)
