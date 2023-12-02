@@ -303,8 +303,6 @@ class StableDiffusionModelHijack:
         self.layers = None
         self.clip = None
 
-        sd_unet.original_forward = None
-
 
     def apply_circular(self, enable):
         if self.circular_enabled == enable:
