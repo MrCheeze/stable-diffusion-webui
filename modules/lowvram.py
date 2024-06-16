@@ -74,16 +74,15 @@ def setup_for_low_vram(sd_model, use_medvram):
         (sd_model, 'first_stage_model'),
         (sd_model, 'depth_model'),
         (sd_model, 'embedder'),
-        (sd_model, 'model'),
+        (sd_model.model, 'diffusion_model'),
         (sd_model, 'embedder'),
     ]
 
-    is_sdxl = hasattr(sd_model, 'conditioner')
-    is_sd2 = not is_sdxl and hasattr(sd_model.cond_stage_model, 'model')
-
-    if is_sdxl:
+    if sd_model.is_sd3:
+        to_remain_in_cpu.append((sd_model, 'cond_stage_model'))
+    elif sd_model.is_sdxl:
         to_remain_in_cpu.append((sd_model, 'conditioner'))
-    elif is_sd2:
+    elif sd_model.is_sd2:
         to_remain_in_cpu.append((sd_model.cond_stage_model, 'model'))
     else:
         to_remain_in_cpu.append((sd_model.cond_stage_model, 'transformer'))
@@ -103,9 +102,11 @@ def setup_for_low_vram(sd_model, use_medvram):
         setattr(obj, field, module)
 
     # register hooks for those the first three models
-    if is_sdxl:
+    if sd_model.is_sd3:
+        sd_model.cond_stage_model.register_forward_pre_hook(send_me_to_gpu)
+    elif sd_model.is_sdxl:
         sd_model.conditioner.register_forward_pre_hook(send_me_to_gpu)
-    elif is_sd2:
+    elif sd_model.is_sd2:
         sd_model.cond_stage_model.model.register_forward_pre_hook(send_me_to_gpu)
         sd_model.cond_stage_model.model.token_embedding.register_forward_pre_hook(send_me_to_gpu)
         parents[sd_model.cond_stage_model.model] = sd_model.cond_stage_model
@@ -123,7 +124,7 @@ def setup_for_low_vram(sd_model, use_medvram):
         sd_model.embedder.register_forward_pre_hook(send_me_to_gpu)
 
     if use_medvram:
-        sd_model.model.register_forward_pre_hook(send_me_to_gpu)
+        sd_model.model.diffusion_model.register_forward_pre_hook(send_me_to_gpu)
     else:
         diff_model = sd_model.model.diffusion_model
 
@@ -131,7 +132,7 @@ def setup_for_low_vram(sd_model, use_medvram):
         # so that only one of them is in GPU at a time
         stored = diff_model.input_blocks, diff_model.middle_block, diff_model.output_blocks, diff_model.time_embed
         diff_model.input_blocks, diff_model.middle_block, diff_model.output_blocks, diff_model.time_embed = None, None, None, None
-        sd_model.model.to(devices.device)
+        diff_model.to(devices.device)
         diff_model.input_blocks, diff_model.middle_block, diff_model.output_blocks, diff_model.time_embed = stored
 
         # install hooks for bits of third model
